@@ -151,21 +151,23 @@ async fn download_attachment(config: &AppConfig, id: String) -> bytes::Bytes {
 }
 
 async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<WebhookMessage>) -> StatusCode {
-    let bytes = download_attachment(&config, message.id).await;
+    let bytes = download_attachment(&config, message.id.clone()).await;
 
     let mut mqtt_options = MqttOptions::new(INTEGRATION_IDENTIFIER, config.mqtt_host, config.mqtt_port);
+    mqtt_options.set_max_packet_size(1000000, 1000000);
 
     mqtt_options.set_keep_alive(Duration::from_secs(5));
 
-    let (mut client, mut connection) = rumqttc::Client::new(mqtt_options, 10);
+    let (mut client, mut eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
     let config_topic = format!("{}/config", INTEGRATION_IDENTIFIER);
+    let image_topic = "reolink-mailpit/sensor/movement/image".to_string();
     let config_message = ConfigMessage {
-        name: "movement".to_string(),
-        device_class: "timestamp".to_string(),
+        name: message.id.clone().to_string(),
+        // device_class: "image".to_string(),
         // unit_of_measurement: "date".to_string(),
-        state_topic: "reolink-mailpit/sensor/movement/state".to_string(),
-        unique_id: "reolink-mailpit-movement".to_string(),
+        unique_id: message.id.to_string(),
         object_id: "reolink-mailpit-movement".to_string(),
+        image_topic: image_topic.clone(),
         device: Device {
             identifiers: vec![INTEGRATION_IDENTIFIER],
             name: INTEGRATION_NAME,
@@ -173,9 +175,33 @@ async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<Webh
     };
 
     let config_serialized = serde_json::to_string(&config_message).unwrap();
-    // TODO TODO from here...
 
-    client.publish(config_topic, rumqttc::QoS::AtLeastOnce, false, config_serialized).expect("Failed to publish config message");
+    client.publish(config_topic, rumqttc::QoS::AtLeastOnce, false, config_serialized).await.expect("Failed to publish config message");
+    loop {
+        let notification = eventloop.poll().await.unwrap();
+        match notification {
+            Incoming(rumqttc::Packet::PubAck(PubAck { pkid, .. })) => {
+                println!("Received puback for packet id: {}", pkid);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+
+    client.publish(image_topic, rumqttc::QoS::AtLeastOnce, false, bytes).await.expect("Failed to publish image message");
+
+    loop {
+        let notification = eventloop.poll().await.unwrap();
+        match notification {
+            Incoming(rumqttc::Packet::PubAck(PubAck { pkid, .. })) => {
+                println!("Received puback for packet id: {}", pkid);
+                break;
+            }
+            _ => {}
+        }
+    }
+
     // request body as string
     // let payload = serde_json::to_string(&message).unwrap();
     // println!("{}", payload);
