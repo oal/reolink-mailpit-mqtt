@@ -45,23 +45,14 @@ impl AppConfig {
 async fn main() {
     dotenv().expect(".env file not found");
     let config = AppConfig::from_env();
-    // initialize tracing
     tracing_subscriber::fmt::init();
 
-    // build our application with a route
-    let mut app = Router::new()
-        // `GET /` goes to `root`
+    let app = Router::new()
         .route("/", get(root))
-        // `POST /users` goes to `create_user`
         .route("/email-webhook", post(email_webhook))
         .with_state(config);
 
-
-    // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8026").await.unwrap();
-
-
-
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -129,25 +120,13 @@ async fn download_attachment(config: &AppConfig, id: String) -> bytes::Bytes {
 
     // parse response as json of MessageDetails
     let message_details: MessageDetails = response.await.unwrap().json().await.unwrap();
-    //
-    println!("{:?}", message_details);
 
     // download first attachment
     let attachment = message_details.attachments.first().unwrap();
-    let file_name = attachment.file_name.clone();
     let response = client
         .get(format!("{}/api/v1/message/{}/part/{}", config.mailpit_url, id, attachment.part_id)).send();
 
-    let mut file = tokio::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(file_name)
-        .await
-        .unwrap();
-
-    let bytes = response.await.unwrap().bytes().await.unwrap();
-    // tokio::io::AsyncWriteExt::write(&mut file, &bytes).await.unwrap();
-    bytes
+    response.await.unwrap().bytes().await.unwrap()
 }
 
 async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<WebhookMessage>) -> StatusCode {
@@ -155,18 +134,15 @@ async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<Webh
 
     let mut mqtt_options = MqttOptions::new(INTEGRATION_IDENTIFIER, config.mqtt_host, config.mqtt_port);
     mqtt_options.set_max_packet_size(1000000, 1000000);
-
     mqtt_options.set_keep_alive(Duration::from_secs(5));
 
     let (mut client, mut eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
-    let config_topic = format!("{}/config", INTEGRATION_IDENTIFIER);
-    let image_topic = "reolink-mailpit/sensor/movement/image".to_string();
+    let config_topic = format!("homeassistant/image/{}/config", INTEGRATION_IDENTIFIER);
+    let image_topic = format!("homeassistant/image/{}/image", INTEGRATION_IDENTIFIER).to_string();
     let config_message = ConfigMessage {
-        name: message.id.clone().to_string(),
-        // device_class: "image".to_string(),
-        // unit_of_measurement: "date".to_string(),
-        unique_id: message.id.to_string(),
-        object_id: "reolink-mailpit-movement".to_string(),
+        name: "reolink".to_string(),
+        unique_id: "reolink".to_string(),
+        object_id: "reolink".to_string(),
         image_topic: image_topic.clone(),
         device: Device {
             identifiers: vec![INTEGRATION_IDENTIFIER],
@@ -188,9 +164,7 @@ async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<Webh
         }
     }
 
-
     client.publish(image_topic, rumqttc::QoS::AtLeastOnce, false, bytes).await.expect("Failed to publish image message");
-
     loop {
         let notification = eventloop.poll().await.unwrap();
         match notification {
@@ -202,19 +176,5 @@ async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<Webh
         }
     }
 
-    // request body as string
-    // let payload = serde_json::to_string(&message).unwrap();
-    // println!("{}", payload);
-    //
-    // // serialize json
-    // // print body
-    // // write body to file
-    // let mut file = tokio::fs::OpenOptions::new()
-    //     .create(true)
-    //     .append(true)
-    //     .open("emails.txt")
-    //     .await
-    //     .unwrap();
-    // tokio::io::AsyncWriteExt::write(&mut file, payload.as_bytes()).await.unwrap();
     StatusCode::OK
 }
