@@ -153,24 +153,18 @@ async fn email_webhook(State(config): State<AppConfig>, Json(message): Json<Webh
     let config_serialized = serde_json::to_string(&config_message).unwrap();
 
     client.publish(config_topic, rumqttc::QoS::AtLeastOnce, false, config_serialized).await.expect("Failed to publish config message");
-    loop {
-        let notification = eventloop.poll().await.unwrap();
-        match notification {
-            Incoming(rumqttc::Packet::PubAck(PubAck { pkid, .. })) => {
-                println!("Received puback for packet id: {}", pkid);
-                break;
-            }
-            _ => {}
-        }
-    }
-
     client.publish(image_topic, rumqttc::QoS::AtLeastOnce, false, bytes).await.expect("Failed to publish image message");
+
+    let mut acks_received = 0;
     loop {
         let notification = eventloop.poll().await.unwrap();
         match notification {
             Incoming(rumqttc::Packet::PubAck(PubAck { pkid, .. })) => {
                 println!("Received puback for packet id: {}", pkid);
-                break;
+                acks_received += 1;
+                if acks_received == 2 {
+                    break;
+                }
             }
             _ => {}
         }
