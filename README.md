@@ -33,7 +33,7 @@ MQTT_HOST=192.168.1.123
 MQTT_PORT=1883
 ```
 
-Run the binary. It's recommended to run it as a service, for example with systemd. Here's an example service file:
+Run the binary. It will listen on port 8026. It's recommended to run it as a service, for example with systemd. Here's an example service file:
 
 ```ini
 [Unit]
