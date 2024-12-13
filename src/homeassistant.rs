@@ -13,5 +13,4 @@ pub struct ConfigMessage {
     pub(crate) object_id: String,
     pub(crate) image_topic: String,
     pub(crate) device: Device,
-    // pub state_topic: String,
 }
