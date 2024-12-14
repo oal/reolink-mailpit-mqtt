@@ -46,6 +46,9 @@ User=your-user
 WorkingDirectory=/path/to/reolink-mailpit-mqtt
 ExecStart=/path/to/reolink-mailpit-mqtt
 Restart=always
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 Put this in `/etc/systemd/system/reolink-mailpit-mqtt.service`, and replace the paths and user with your own.
